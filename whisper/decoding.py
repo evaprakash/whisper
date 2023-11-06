@@ -290,7 +290,7 @@ class GreedyDecoder(TokenDecoder):
         tokens = torch.cat([tokens, next_tokens[:, None]], dim=-1)
 
         completed = (tokens[:, -1] == self.eot).all()
-        return tokens, completed
+        return tokens, completed, logprobs
 
     def finalize(self, tokens: Tensor, sum_logprobs: Tensor):
         # make sure each sequence has at least one EOT token at the end
@@ -679,6 +679,7 @@ class DecodingTask:
 
     def _main_loop(self, audio_features: Tensor, tokens: Tensor):
         n_batch = tokens.shape[0]
+	logprobs = None
         sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
         no_speech_probs = [np.nan] * n_batch
 
@@ -700,14 +701,14 @@ class DecodingTask:
                     logit_filter.apply(logits, tokens)
 
                 # expand the tokens tensor with the selected next tokens
-                tokens, completed = self.decoder.update(tokens, logits, sum_logprobs)
+                tokens, completed, logprobs = self.decoder.update(tokens, logits, sum_logprobs)
 
                 if completed or tokens.shape[-1] > self.n_ctx:
                     break
         finally:
             self.inference.cleanup_caching()
 
-        return tokens, sum_logprobs, no_speech_probs
+        return tokens, sum_logprobs, no_speech_probs, logprobs
 
     @torch.no_grad()
     def run(self, mel: Tensor) -> List[DecodingResult]:
@@ -734,7 +735,7 @@ class DecodingTask:
         tokens = tokens.repeat_interleave(self.n_group, dim=0).to(audio_features.device)
 
         # call the main sampling loop
-        tokens, sum_logprobs, no_speech_probs = self._main_loop(audio_features, tokens)
+        tokens, sum_logprobs, no_speech_probs, logprobs = self._main_loop(audio_features, tokens)
 
         # reshape the tensors to have (n_audio, n_group) as the first two dimensions
         audio_features = audio_features[:: self.n_group]
@@ -768,6 +769,7 @@ class DecodingTask:
             audio_features,
             avg_logprobs,
             no_speech_probs,
+            logprobs,
         )
         if len(set(map(len, fields))) != 1:
             raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
@@ -781,9 +783,10 @@ class DecodingTask:
                 avg_logprob=avg_logprob,
                 no_speech_prob=no_speech_prob,
                 temperature=self.options.temperature,
+                token_scores=logprobs,
                 compression_ratio=compression_ratio(text),
             )
-            for text, language, tokens, features, avg_logprob, no_speech_prob in zip(
+            for text, language, tokens, features, avg_logprob, no_speech_prob, logprobs in zip(
                 *fields
             )
         ]
