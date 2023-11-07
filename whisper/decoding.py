@@ -117,6 +117,7 @@ class DecodingOptions:
 @dataclass(frozen=True)
 class DecodingResult:
 	audio_features: Tensor
+	token_scores: Tensor
 	language: str
 	language_probs: Optional[Dict[str, float]] = None
 	tokens: List[int] = field(default_factory=list)
@@ -773,18 +774,16 @@ class DecodingTask:
 		)
 		if len(set(map(len, fields))) != 1:
 			raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
-		print(logprobs)
-		print(type(logprobs))
 		return [
 			DecodingResult(
 				audio_features=features,
+				token_scores=logprobs,
 				language=language,
 				tokens=tokens,
 				text=text,
 				avg_logprob=avg_logprob,
 				no_speech_prob=no_speech_prob,
 				temperature=self.options.temperature,
-				token_scores=logprobs,
 				compression_ratio=compression_ratio(text),
 			)
 			for text, language, tokens, features, avg_logprob, no_speech_prob, logprobs in zip(
