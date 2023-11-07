@@ -773,7 +773,8 @@ class DecodingTask:
 		)
 		if len(set(map(len, fields))) != 1:
 			raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
-
+		print(logprobs)
+		print(type(logprobs))
 		return [
 			DecodingResult(
 				audio_features=features,
