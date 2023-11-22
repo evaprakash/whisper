@@ -685,7 +685,7 @@ class DecodingTask:
 		token_scores = None
 		sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
 		no_speech_probs = [np.nan] * n_batch
-
+		total_token_scores = []
 		try:
 			for i in range(self.sample_len):
 				logits = self.inference.logits(tokens, audio_features)
@@ -705,13 +705,13 @@ class DecodingTask:
 
 				# expand the tokens tensor with the selected next tokens
 				tokens, completed, token_scores = self.decoder.update(tokens, logits, sum_logprobs)
-
+				total_token_scores.append(token_scores)
 				if completed or tokens.shape[-1] > self.n_ctx:
 					break
 		finally:
 			self.inference.cleanup_caching()
 
-		return tokens, sum_logprobs, no_speech_probs, token_scores
+		return tokens, sum_logprobs, no_speech_probs, token_scores, total_token_scores
 
 	@torch.no_grad()
 	def run(self, mel: Tensor) -> List[DecodingResult]:
