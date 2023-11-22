@@ -118,6 +118,7 @@ class DecodingOptions:
 class DecodingResult:
 	audio_features: Tensor
 	token_scores: Tensor
+	total_token_scores: Tensor
 	language: str
 	language_probs: Optional[Dict[str, float]] = None
 	tokens: List[int] = field(default_factory=list)
@@ -738,8 +739,8 @@ class DecodingTask:
 		tokens = tokens.repeat_interleave(self.n_group, dim=0).to(audio_features.device)
 
 		# call the main sampling loop
-		tokens, sum_logprobs, no_speech_probs, token_scores = self._main_loop(audio_features, tokens)
-
+		tokens, sum_logprobs, no_speech_probs, token_scores, total_token_scores = self._main_loop(audio_features, tokens)
+		print("HELLO!")
 		# reshape the tensors to have (n_audio, n_group) as the first two dimensions
 		audio_features = audio_features[:: self.n_group]
 		no_speech_probs = no_speech_probs[:: self.n_group]
@@ -780,6 +781,7 @@ class DecodingTask:
 			DecodingResult(
 				audio_features=features,
 				token_scores=token_scores,
+				total_token_scores=total_token_scores,
 				language=language,
 				tokens=tokens,
 				text=text,
@@ -788,7 +790,7 @@ class DecodingTask:
 				temperature=self.options.temperature,
 				compression_ratio=compression_ratio(text),
 			)
-			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores in zip(
+			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores, total_token_scores in zip(
 				*fields
 			)
 		]
