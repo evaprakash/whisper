@@ -119,7 +119,6 @@ class DecodingResult:
 	audio_features: Tensor
 	token_scores: Tensor
 	language: str
-	sample_len: int
 	language_probs: Optional[Dict[str, float]] = None
 	tokens: List[int] = field(default_factory=list)
 	text: str = ""
@@ -686,6 +685,7 @@ class DecodingTask:
 		token_scores = []
 		sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
 		no_speech_probs = [np.nan] * n_batch
+		print("SAMPLE LEN: ", str(self.sample_len))
 		try:
 			for i in range(self.sample_len):
 				logits = self.inference.logits(tokens, audio_features)
@@ -711,7 +711,7 @@ class DecodingTask:
 		finally:
 			self.inference.cleanup_caching()
 		token_scores = torch.stack(token_scores)
-		return tokens, sum_logprobs, no_speech_probs, token_scores, self.sample_len
+		return tokens, sum_logprobs, no_speech_probs, token_scores
 
 	@torch.no_grad()
 	def run(self, mel: Tensor) -> List[DecodingResult]:
@@ -738,7 +738,7 @@ class DecodingTask:
 		tokens = tokens.repeat_interleave(self.n_group, dim=0).to(audio_features.device)
 
 		# call the main sampling loop
-		tokens, sum_logprobs, no_speech_probs, token_scores, sample_len = self._main_loop(audio_features, tokens)
+		tokens, sum_logprobs, no_speech_probs, token_scores = self._main_loop(audio_features, tokens)
 		# reshape the tensors to have (n_audio, n_group) as the first two dimensions
 		audio_features = audio_features[:: self.n_group]
 		no_speech_probs = no_speech_probs[:: self.n_group]
@@ -772,7 +772,6 @@ class DecodingTask:
 			avg_logprobs,
 			no_speech_probs,
 			token_scores,
-			sample_len
 		)
 		#if len(set(map(len, fields))) != 1:
 		#	raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
@@ -789,7 +788,7 @@ class DecodingTask:
 				temperature=self.options.temperature,
 				compression_ratio=compression_ratio(text),
 			)
-			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores, sample_len in zip(
+			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores in zip(
 				*fields
 			)
 		]
