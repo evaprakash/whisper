@@ -705,12 +705,15 @@ class DecodingTask:
 
 				# expand the tokens tensor with the selected next tokens
 				tokens, completed, curr_token_scores = self.decoder.update(tokens, logits, sum_logprobs)
+				print("CURR TOKEN_SCORES: ", str(curr_token_scores.shape))
 				token_scores.append(curr_token_scores)
 				if completed or tokens.shape[-1] > self.n_ctx:
 					break
 		finally:
 			self.inference.cleanup_caching()
+		print("LEN BEFORE: ", str(len(token_scores)))
 		token_scores = torch.stack(token_scores)
+		print("LEN AFTER: ", str(token_scores.shape))
 		return tokens, sum_logprobs, no_speech_probs, token_scores
 
 	@torch.no_grad()
@@ -780,7 +783,6 @@ class DecodingTask:
 				audio_features=features,
 				token_scores=token_scores,
 				language=language,
-				sample_len=sample_len,
 				tokens=tokens,
 				text=text,
 				avg_logprob=avg_logprob,
