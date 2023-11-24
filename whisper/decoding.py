@@ -118,7 +118,6 @@ class DecodingOptions:
 class DecodingResult:
 	audio_features: Tensor
 	token_scores: Tensor
-	total_token_scores: Tensor
 	language: str
 	language_probs: Optional[Dict[str, float]] = None
 	tokens: List[int] = field(default_factory=list)
@@ -291,10 +290,10 @@ class GreedyDecoder(TokenDecoder):
 		next_tokens[tokens[:, -1] == self.eot] = self.eot
 		tokens = torch.cat([tokens, next_tokens[:, None]], dim=-1)
 		
-		token_scores = torch.stack([logprobs[i, next_tokens[i]] for i in range(next_tokens.shape[0])], dim=0)
+		curr_token_scores = torch.stack([logprobs[i, next_tokens[i]] for i in range(next_tokens.shape[0])], dim=0)
 
 		completed = (tokens[:, -1] == self.eot).all()
-		return tokens, completed, token_scores
+		return tokens, completed, curr_token_scores
 
 	def finalize(self, tokens: Tensor, sum_logprobs: Tensor):
 		# make sure each sequence has at least one EOT token at the end
@@ -683,10 +682,9 @@ class DecodingTask:
 
 	def _main_loop(self, audio_features: Tensor, tokens: Tensor):
 		n_batch = tokens.shape[0]
-		token_scores = None
+		token_scores = []
 		sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
 		no_speech_probs = [np.nan] * n_batch
-		total_token_scores = []
 		try:
 			for i in range(self.sample_len):
 				logits = self.inference.logits(tokens, audio_features)
@@ -705,14 +703,14 @@ class DecodingTask:
 					logit_filter.apply(logits, tokens)
 
 				# expand the tokens tensor with the selected next tokens
-				tokens, completed, token_scores = self.decoder.update(tokens, logits, sum_logprobs)
-				total_token_scores.append(token_scores)
+				tokens, completed, curr_token_scores = self.decoder.update(tokens, logits, sum_logprobs)
+				token_scores.append(curr_token_scores)
 				if completed or tokens.shape[-1] > self.n_ctx:
 					break
 		finally:
 			self.inference.cleanup_caching()
-
-		return tokens, sum_logprobs, no_speech_probs, token_scores, total_token_scores
+		token_scores = torch.stack(token_scores)
+		return tokens, sum_logprobs, no_speech_probs, token_scores
 
 	@torch.no_grad()
 	def run(self, mel: Tensor) -> List[DecodingResult]:
@@ -739,8 +737,7 @@ class DecodingTask:
 		tokens = tokens.repeat_interleave(self.n_group, dim=0).to(audio_features.device)
 
 		# call the main sampling loop
-		tokens, sum_logprobs, no_speech_probs, token_scores, total_token_scores = self._main_loop(audio_features, tokens)
-		print("HELLO!")
+		tokens, sum_logprobs, no_speech_probs, token_scores = self._main_loop(audio_features, tokens)
 		# reshape the tensors to have (n_audio, n_group) as the first two dimensions
 		audio_features = audio_features[:: self.n_group]
 		no_speech_probs = no_speech_probs[:: self.n_group]
@@ -773,7 +770,7 @@ class DecodingTask:
 			audio_features,
 			avg_logprobs,
 			no_speech_probs,
-			logprobs,
+			token_scores,
 		)
 		if len(set(map(len, fields))) != 1:
 			raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
@@ -781,7 +778,6 @@ class DecodingTask:
 			DecodingResult(
 				audio_features=features,
 				token_scores=token_scores,
-				total_token_scores=total_token_scores,
 				language=language,
 				tokens=tokens,
 				text=text,
@@ -790,7 +786,7 @@ class DecodingTask:
 				temperature=self.options.temperature,
 				compression_ratio=compression_ratio(text),
 			)
-			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores, total_token_scores in zip(
+			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores in zip(
 				*fields
 			)
 		]
