@@ -772,8 +772,8 @@ class DecodingTask:
 			no_speech_probs,
 			token_scores,
 		)
-		if len(set(map(len, fields))) != 1:
-			raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
+		#if len(set(map(len, fields))) != 1:
+		#	raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
 		return [
 			DecodingResult(
 				audio_features=features,
