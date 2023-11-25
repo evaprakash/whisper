@@ -219,7 +219,7 @@ class TokenDecoder:
 		"""Initialize any stateful variables for decoding a new sequence"""
 
 	def update(
-		self, tokens: Tensor, logits: Tensor, sum_logprobs: Tensor
+		self, tokens: Tensor, logits: Tensor, sum_logprobs: Tensor, token_scores: Tensor
 	) -> Tuple[Tensor, bool]:
 		"""Specify how to select the next token, based on the current trace and logits
 
@@ -246,7 +246,7 @@ class TokenDecoder:
 		raise NotImplementedError
 
 	def finalize(
-		self, tokens: Tensor, sum_logprobs: Tensor
+		self, tokens: Tensor, sum_logprobs: Tensor, token_scores: Tensor
 	) -> Tuple[Sequence[Sequence[Tensor]], List[List[float]]]:
 		"""Finalize search and return the final candidate sequences
 
@@ -293,6 +293,7 @@ class GreedyDecoder(TokenDecoder):
 		
 		curr_token_scores = scores[torch.arange(scores.shape[0]), next_tokens]
 		token_scores = torch.cat([token_scores, curr_token_scores[:, None]], dim=-1)
+		print("Update shapes: ", str(tokens.shape), str(token_scores.shape))
 
 		completed = (tokens[:, -1] == self.eot).all()
 		return tokens, completed, token_scores
@@ -301,6 +302,7 @@ class GreedyDecoder(TokenDecoder):
 		# make sure each sequence has at least one EOT token at the end
 		tokens = F.pad(tokens, (0, 1), value=self.eot)
 		token_scores = F.pad(token_scores, (0, 1), value=0)
+		print("Finalize shapes: ", str(tokens.shape), str(token_scores.shape))
 		return tokens, sum_logprobs.tolist(), token_scores.tolist()
 
 
@@ -689,6 +691,8 @@ class DecodingTask:
 		no_speech_probs = [np.nan] * n_batch
 
 		token_scores = torch.zeros_like(tokens).float()		
+		
+		print("Initial shapes: ", str(tokens.shape), str(token_scores.shape))
 
 		try:
 			for i in range(self.sample_len):
@@ -709,6 +713,7 @@ class DecodingTask:
 
 				# expand the tokens tensor with the selected next tokens
 				tokens, completed, token_scores = self.decoder.update(tokens, logits, sum_logprobs, token_scores)
+				print("Double-check update shapes: ", str(tokens.shape), str(token_scores.shape))
 				if completed or tokens.shape[-1] > self.n_ctx:
 					break
 		finally:
@@ -741,6 +746,7 @@ class DecodingTask:
 
 		# call the main sampling loop
 		tokens, sum_logprobs, no_speech_probs, token_scores = self._main_loop(audio_features, tokens)
+		print("Double-check main loop shapes: ", str(tokens.shape), str(token_scores.shape))
 		# reshape the tensors to have (n_audio, n_group) as the first two dimensions
 		audio_features = audio_features[:: self.n_group]
 		no_speech_probs = no_speech_probs[:: self.n_group]
@@ -755,6 +761,7 @@ class DecodingTask:
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
 			for s in tokens
 		]
+		
 
 		# select the top-ranked sample in each group
 		selected = self.sequence_ranker.rank(tokens, sum_logprobs)
