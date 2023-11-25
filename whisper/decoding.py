@@ -120,6 +120,7 @@ class DecodingResult:
 	language: str
 	language_probs: Optional[Dict[str, float]] = None
 	tokens: List[int] = field(default_factory=list)
+	token_scores: List[float] = field(default_factory=list)
 	text: str = ""
 	avg_logprob: float = np.nan
 	no_speech_prob: float = np.nan
@@ -275,7 +276,7 @@ class GreedyDecoder(TokenDecoder):
 		self.eot = eot
 
 	def update(
-		self, tokens: Tensor, logits: Tensor, sum_logprobs: Tensor
+		self, tokens: Tensor, logits: Tensor, sum_logprobs: Tensor, token_scores: Tensor
 	) -> Tuple[Tensor, bool]:
 		if self.temperature == 0:
 			next_tokens = logits.argmax(dim=-1)
@@ -283,22 +284,24 @@ class GreedyDecoder(TokenDecoder):
 			next_tokens = Categorical(logits=logits / self.temperature).sample()
 
 		logprobs = F.log_softmax(logits.float(), dim=-1)
+		scores = torch.exp(logprobs)
 		current_logprobs = logprobs[torch.arange(logprobs.shape[0]), next_tokens]
 		sum_logprobs += current_logprobs * (tokens[:, -1] != self.eot)
 
 		next_tokens[tokens[:, -1] == self.eot] = self.eot
 		tokens = torch.cat([tokens, next_tokens[:, None]], dim=-1)
 		
-		curr_token_scores = current_logprobs
-		#torch.stack([logprobs[i, next_tokens[i]] for i in range(next_tokens.shape[0])], dim=0)
+		curr_token_scores = scores[torch.arange(scores.shape[0]), next_tokens]
+		token_scores = torch.cat([token_scores, curr_token_scores[:, None]], dim=-1)
 
 		completed = (tokens[:, -1] == self.eot).all()
-		return tokens, completed, curr_token_scores
+		return tokens, completed, token_scores
 
-	def finalize(self, tokens: Tensor, sum_logprobs: Tensor):
+	def finalize(self, tokens: Tensor, sum_logprobs: Tensor, token_scores: Tensor):
 		# make sure each sequence has at least one EOT token at the end
 		tokens = F.pad(tokens, (0, 1), value=self.eot)
-		return tokens, sum_logprobs.tolist()
+		token_scores = F.pad(token_scores, (0, 1), value=0)
+		return tokens, sum_logprobs.tolist(), token_scores.tolist()
 
 
 class BeamSearchDecoder(TokenDecoder):
@@ -682,10 +685,11 @@ class DecodingTask:
 
 	def _main_loop(self, audio_features: Tensor, tokens: Tensor):
 		n_batch = tokens.shape[0]
-		token_scores = []
 		sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
 		no_speech_probs = [np.nan] * n_batch
-		print("SAMPLE LEN: ", str(self.sample_len))
+
+		token_scores = torch.zeros_like(tokens).float()		
+
 		try:
 			for i in range(self.sample_len):
 				logits = self.inference.logits(tokens, audio_features)
@@ -704,17 +708,11 @@ class DecodingTask:
 					logit_filter.apply(logits, tokens)
 
 				# expand the tokens tensor with the selected next tokens
-				tokens, completed, curr_token_scores = self.decoder.update(tokens, logits, sum_logprobs)
-				print("CURR TOKEN_SCORES: ", str(curr_token_scores.shape))
-				token_scores.append((curr_token_scores.tolist()[0], tokens.tolist()[0][-1]))
-				#token_scores.append(curr_token_scores)
+				tokens, completed, token_scores = self.decoder.update(tokens, logits, sum_logprobs, token_scores)
 				if completed or tokens.shape[-1] > self.n_ctx:
 					break
 		finally:
 			self.inference.cleanup_caching()
-		#print("LEN BEFORE: ", str(len(token_scores)))
-		#token_scores = torch.stack(token_scores)
-		#print("LEN AFTER: ", str(token_scores.shape))
 		return tokens, sum_logprobs, no_speech_probs, token_scores
 
 	@torch.no_grad()
@@ -752,7 +750,7 @@ class DecodingTask:
 		sum_logprobs = sum_logprobs.reshape(n_audio, self.n_group)
 
 		# get the final candidates for each group, and slice between the first sampled token and EOT
-		tokens, sum_logprobs = self.decoder.finalize(tokens, sum_logprobs)
+		tokens, sum_logprobs, token_scores = self.decoder.finalize(tokens, sum_logprobs, token_scores)
 		tokens: List[List[Tensor]] = [
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
 			for s in tokens
@@ -775,6 +773,7 @@ class DecodingTask:
 			audio_features,
 			avg_logprobs,
 			no_speech_probs,
+			token_scores,
 		)
 		if len(set(map(len, fields))) != 1:
 			raise RuntimeError(f"inconsistent result lengths: {list(map(len, fields))}")
@@ -783,16 +782,17 @@ class DecodingTask:
 				audio_features=features,
 				language=language,
 				tokens=tokens,
+				token_scores=token_scores,
 				text=text,
 				avg_logprob=avg_logprob,
 				no_speech_prob=no_speech_prob,
 				temperature=self.options.temperature,
 				compression_ratio=compression_ratio(text),
 			)
-			for text, language, tokens, features, avg_logprob, no_speech_prob in zip(
+			for text, language, tokens, features, avg_logprob, no_speech_prob, token_scores in zip(
 				*fields
 			)
-		], token_scores
+		]
 
 
 @torch.no_grad()
