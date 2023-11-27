@@ -301,7 +301,7 @@ class GreedyDecoder(TokenDecoder):
 	def finalize(self, tokens: Tensor, sum_logprobs: Tensor, token_scores: Tensor):
 		# make sure each sequence has at least one EOT token at the end
 		tokens = F.pad(tokens, (0, 1), value=self.eot)
-		token_scores = F.pad(token_scores, (0, 1), value=0)
+		token_scores = F.pad(token_scores, (0, 1), value=0)[:, None, :]
 		print("Finalize shapes: ", str(tokens.shape), str(token_scores.shape))
 		return tokens, sum_logprobs.tolist(), token_scores.tolist()
 
@@ -757,21 +757,20 @@ class DecodingTask:
 
 		# get the final candidates for each group, and slice between the first sampled token and EOT
 		tokens, sum_logprobs, token_scores = self.decoder.finalize(tokens, sum_logprobs, token_scores)
-		print("End token score shape: ", str(token_scores))
+		print("End token scores: ", str(token_scores))
 		print("Tokens before: ", str(tokens))
 		tokens: List[List[Tensor]] = [
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
 			for s in tokens
 		]
-		print("Tokens after: ", str(tokens))
+		token_scores: List[List[Tensor]] = [[t[:, :tokens[i][j].shape[-1]] for j, t in enumerate(s)] for i, s in enumerate(token_scores)]
+		print("Tokens after: ", str(tokens), str(token_scores))
 
 		# select the top-ranked sample in each group
 		selected = self.sequence_ranker.rank(tokens, sum_logprobs)
-		print("Selected: ", str(len(selected)), str(selected))
 		tokens: List[List[int]] = [t[i].tolist() for i, t in zip(selected, tokens)]
-		print("Tokens: ", str(len(tokens)), str(tokens))
+		token_scores: List[List[int]] = [t[i].tolist() for i, t in zip(selected, token_scores)]
 		texts: List[str] = [tokenizer.decode(t).strip() for t in tokens]
-		print("Text: ", str(len(texts)), str(texts))
 
 		sum_logprobs: List[float] = [lp[i] for i, lp in zip(selected, sum_logprobs)]
 		avg_logprobs: List[float] = [
