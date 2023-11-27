@@ -768,8 +768,8 @@ class DecodingTask:
 			print("!")
 			for j, t in enumerate(s):
 				print(str(j), str(t))
-				print(tokens[i][j].shape)	
-		token_scores: List[List[Tensor]] = [[t[:, :tokens[i][j].shape[-1]] for j, t in enumerate(s)] for i, s in enumerate(token_scores)]
+				print(tokens[i][j].shape[0])	
+		token_scores: List[List[Tensor]] = [[t[:, :tokens[i][j].shape[0]] for j, t in enumerate(s)] for i, s in enumerate(token_scores)]
 		print("Tokens after: ", str(tokens), str(token_scores))
 
 		# select the top-ranked sample in each group
