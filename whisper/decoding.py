@@ -757,7 +757,7 @@ class DecodingTask:
 
 		# get the final candidates for each group, and slice between the first sampled token and EOT
 		tokens, sum_logprobs, token_scores = self.decoder.finalize(tokens, sum_logprobs, token_scores)
-		print("End tokens shape: ", str(tokens.shape), str(token_scores.shape))
+		print("End token score shape: ", str(token_scores))
 		print("Tokens before: ", str(tokens))
 		tokens: List[List[Tensor]] = [
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
