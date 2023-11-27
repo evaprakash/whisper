@@ -765,8 +765,11 @@ class DecodingTask:
 
 		# select the top-ranked sample in each group
 		selected = self.sequence_ranker.rank(tokens, sum_logprobs)
+		print("Selected: ", selected.shape)
 		tokens: List[List[int]] = [t[i].tolist() for i, t in zip(selected, tokens)]
+		print("Tokens: ", str(len(tokens)))
 		texts: List[str] = [tokenizer.decode(t).strip() for t in tokens]
+		print("Text: ", str(len(text)))
 
 		sum_logprobs: List[float] = [lp[i] for i, lp in zip(selected, sum_logprobs)]
 		avg_logprobs: List[float] = [
