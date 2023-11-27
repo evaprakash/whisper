@@ -759,17 +759,15 @@ class DecodingTask:
 		tokens, sum_logprobs, token_scores = self.decoder.finalize(tokens, sum_logprobs, token_scores)
 		print("End token scores: ", str(token_scores))
 		print("Tokens before: ", str(tokens))
+		orig_tokens = tokens
 		tokens: List[List[Tensor]] = [
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
 			for s in tokens
 		]
-		for i, s in enumerate(token_scores):
-			print(str(i), str(s))
-			print("!")
-			for j, t in enumerate(s):
-				print(str(j), str(t))
-				print(tokens[i][j].shape[0])	
-		token_scores: List[List[Tensor]] = [[t[:, :tokens[i][j].shape[0]] for j, t in enumerate(s)] for i, s in enumerate(token_scores)]
+		token_scores: List[List[Tensor]] = [
+			[token_scores[i][j][self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for j, t in enumerate(s)]
+			for i, s in enumerate(orig_tokens)
+		]
 		print("Tokens after: ", str(tokens), str(token_scores))
 
 		# select the top-ranked sample in each group
