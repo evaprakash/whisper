@@ -767,9 +767,9 @@ class DecodingTask:
 		selected = self.sequence_ranker.rank(tokens, sum_logprobs)
 		print("Selected: ", str(len(selected)), str(selected))
 		tokens: List[List[int]] = [t[i].tolist() for i, t in zip(selected, tokens)]
-		print("Tokens: ", str(len(tokens)))
+		print("Tokens: ", str(len(tokens)), str(tokens))
 		texts: List[str] = [tokenizer.decode(t).strip() for t in tokens]
-		print("Text: ", str(len(text)))
+		print("Text: ", str(len(texts)), str(texts))
 
 		sum_logprobs: List[float] = [lp[i] for i, lp in zip(selected, sum_logprobs)]
 		avg_logprobs: List[float] = [
