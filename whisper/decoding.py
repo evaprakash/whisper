@@ -763,6 +763,12 @@ class DecodingTask:
 			[t[self.sample_begin : (t == tokenizer.eot).nonzero()[0, 0]] for t in s]
 			for s in tokens
 		]
+		for i, s in enumerate(token_scores):
+			print(str(i), str(s))
+			print("!")
+			for j, t in enumerate(s):
+				print(str(j), str(t))
+				print(tokens[i][j].shape)	
 		token_scores: List[List[Tensor]] = [[t[:, :tokens[i][j].shape[-1]] for j, t in enumerate(s)] for i, s in enumerate(token_scores)]
 		print("Tokens after: ", str(tokens), str(token_scores))
 
