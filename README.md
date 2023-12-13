@@ -1,3 +1,7 @@
+# Clarify
+
+To run the interactive demo of Clarify and use the tool on your own recorded data, please refer to the interactive_demo notebook. To see the model finetuning process, please refer to the slurp_analysis notebook.
+
 # Whisper
 
 [[Blog]](https://openai.com/blog/whisper)
